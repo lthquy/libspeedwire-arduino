@@ -20,7 +20,27 @@ Port của thư viện SMA Speedwire cho ESP32/Arduino. Thư viện này cho ph�
 
 ## Cài đặt
 
-### Cách 1: Cài đặt từ thư mục local (khuyến nghị cho development)
+⚠️ **QUAN TRỌNG:** Thư viện PHẢI được cài đặt vào Arduino libraries folder. Không thể compile trực tiếp từ thư mục download!
+
+### Cách 1: Sử dụng Install Script (Khuyến nghị)
+
+#### Windows:
+1. Download/clone repository này
+2. Mở Command Prompt trong thư mục repository
+3. Chạy:
+```cmd
+install_arduino.bat
+```
+
+#### macOS/Linux:
+1. Download/clone repository này
+2. Mở Terminal trong thư mục repository
+3. Chạy:
+```bash
+./install_arduino.sh
+```
+
+### Cách 2: Cài đặt thủ công
 
 1. Clone repository này:
 ```bash
@@ -29,21 +49,41 @@ git clone https://github.com/lthquy/libspeedwire-arduino.git
 
 2. Copy thư mục vào Arduino libraries:
 ```bash
-# Windows
+# Windows (Command Prompt)
 xcopy /E /I libspeedwire-arduino "%USERPROFILE%\Documents\Arduino\libraries\Speedwire"
 
-# macOS/Linux
+# macOS
+cp -r libspeedwire-arduino ~/Documents/Arduino/libraries/Speedwire
+
+# Linux
 cp -r libspeedwire-arduino ~/Arduino/libraries/Speedwire
 ```
 
-3. Khởi động lại Arduino IDE
+3. **QUAN TRỌNG:** Khởi động lại Arduino IDE
 
-### Cách 2: Cài đặt qua Arduino Library Manager (sau khi publish)
+4. Xác nhận cài đặt thành công:
+   - Mở Arduino IDE
+   - **Sketch** → **Include Library**
+   - Bạn sẽ thấy "Speedwire" trong danh sách
+
+### Cách 3: Cài đặt qua Arduino Library Manager (sau khi publish)
 
 1. Mở Arduino IDE
 2. Vào **Sketch** → **Include Library** → **Manage Libraries**
 3. Tìm kiếm "Speedwire"
 4. Click **Install**
+
+### ⚠️ Lỗi thường gặp khi cài đặt
+
+**Lỗi:** `undefined reference to 'libspeedwire::...'`
+
+**Nguyên nhân:** Đang compile từ thư mục download thay vì từ Arduino libraries
+
+**Giải pháp:**
+1. Làm theo hướng dẫn cài đặt ở trên
+2. Đảm bảo thư viện nằm trong `Documents\Arduino\libraries\Speedwire\`
+3. Khởi động lại Arduino IDE
+4. Mở example từ: **File** → **Examples** → **Speedwire** → **EmeterReader**
 
 ## Cấu hình Arduino IDE
 
