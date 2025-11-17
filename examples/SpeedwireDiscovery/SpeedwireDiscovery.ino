@@ -15,9 +15,7 @@
 #include <WiFi.h>
 #include <LocalHost.hpp>
 #include <SpeedwireDiscovery.hpp>
-#include <SpeedwireSocket.hpp>
 #include <SpeedwireDevice.hpp>
-#include <Logger.hpp>
 
 using namespace libspeedwire;
 
@@ -26,7 +24,6 @@ const char* ssid = "YOUR_WIFI_SSID";
 const char* password = "YOUR_WIFI_PASSWORD";
 
 // Speedwire objects
-LocalHost* localhost = nullptr;
 SpeedwireDiscovery* discovery = nullptr;
 
 void setup() {
@@ -53,15 +50,13 @@ void setup() {
   Serial.println();
 
   // Initialize LocalHost singleton
-  localhost = &LocalHost::getInstance();
+  LocalHost& localhost = LocalHost::getInstance();
 
-  // Update LocalHost with current WiFi info
-  localhost->cacheHostname(std::string(WiFi.getHostname()));
-  localhost->cacheLocalIPAddresses(LocalHost::queryLocalIPAddresses());
-  localhost->cacheLocalInterfaceInfos(LocalHost::queryLocalInterfaceInfos());
+  // Update network info after WiFi connection
+  localhost.updateNetworkInfo();
 
   // Create discovery instance
-  discovery = new SpeedwireDiscovery(*localhost);
+  discovery = new SpeedwireDiscovery(localhost);
 
   Serial.println("Starting device discovery...\n");
 }
@@ -74,13 +69,20 @@ void loop() {
     return;
   }
 
+  if (discovery == nullptr) {
+    Serial.println("Discovery not initialized!");
+    delay(1000);
+    return;
+  }
+
   // Perform discovery
   Serial.println("Discovering Speedwire devices...");
-  const std::vector<SpeedwireInfo>& devices = discovery->discoverDevices();
+  int numDevices = discovery->discoverDevices();
 
-  if (devices.empty()) {
+  if (numDevices <= 0) {
     Serial.println("No Speedwire devices found.");
   } else {
+    const std::vector<SpeedwireDevice>& devices = discovery->getDevices();
     Serial.printf("Found %d device(s):\n\n", devices.size());
 
     for (const auto& device : devices) {
@@ -88,18 +90,11 @@ void loop() {
       Serial.printf("Device: %s\n", device.deviceAddress.toString().c_str());
       Serial.printf("  Serial: %u\n", device.serialNumber);
       Serial.printf("  SusyID: %u\n", device.susyID);
-      Serial.printf("  IP: %s\n", device.peer.toString().c_str());
+      Serial.printf("  Peer: %s\n", device.peerAddress.toString().c_str());
 
-      // Decode device class and type if available
-      uint32_t deviceClass = (device.deviceClass >> 24) & 0xFF;
-      Serial.printf("  Class: 0x%02X ", deviceClass);
-      switch (deviceClass) {
-        case 0x00: Serial.println("(Unknown)"); break;
-        case 0x01: Serial.println("(Solar Inverter)"); break;
-        case 0x02: Serial.println("(Energy Meter)"); break;
-        default: Serial.println("(Other)"); break;
-      }
-
+      // Decode device class if available
+      Serial.printf("  Device Class: 0x%08X\n", device.deviceClass);
+      Serial.printf("  Device Type: 0x%08X\n", device.deviceType);
       Serial.println();
     }
   }

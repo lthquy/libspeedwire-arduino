@@ -61,6 +61,11 @@ namespace libspeedwire {
 
         static LocalHost& getInstance(void);
 
+#ifdef ARDUINO
+        // For Arduino/ESP32: Update network info after WiFi connection
+        void updateNetworkInfo(void);
+#endif
+
         // getter for hostname
         const std::string& getHostname(void) const;
 

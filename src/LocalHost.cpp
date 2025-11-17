@@ -101,6 +101,19 @@ LocalHost& LocalHost::getInstance(void) {
 
 
 /**
+ *  For Arduino/ESP32: Update network information after WiFi connection
+ */
+#ifdef ARDUINO
+void LocalHost::updateNetworkInfo(void) {
+    // Query and cache current network information
+    cacheHostname(queryHostname());
+    cacheLocalIPAddresses(queryLocalIPAddresses());
+    cacheLocalInterfaceInfos(queryLocalInterfaceInfos());
+}
+#endif
+
+
+/**
  *  Getter for cached hostname
  */
 const std::string &LocalHost::getHostname(void) const {

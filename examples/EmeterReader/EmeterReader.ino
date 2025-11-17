@@ -21,9 +21,9 @@
 #include <SpeedwireSocketFactory.hpp>
 #include <SpeedwireReceiveDispatcher.hpp>
 #include <SpeedwireHeader.hpp>
+#include <SpeedwireData2Packet.hpp>
 #include <SpeedwireEmeterProtocol.hpp>
 #include <ObisData.hpp>
-#include <Logger.hpp>
 
 using namespace libspeedwire;
 
@@ -43,57 +43,66 @@ std::vector<SpeedwireSocket> sockets;
 SpeedwireReceiveDispatcher* dispatcher = nullptr;
 
 // Custom receiver for emeter packets
-class EmeterReceiver : public SpeedwireReceiveDispatcher::IReceiver {
+class EmeterReceiver : public EmeterPacketReceiverBase {
 public:
-  EmeterReceiver() : protocolID(sma_emeter_protocol_id) {}
+  EmeterReceiver(LocalHost& host) : EmeterPacketReceiverBase(host) {}
 
   virtual void receive(SpeedwireHeader& speedwire_packet, struct sockaddr& src) override {
     // Parse emeter packet
-    SpeedwireEmeterProtocol emeter(speedwire_packet);
+    SpeedwireData2Packet data2_packet(speedwire_packet);
+    SpeedwireEmeterProtocol emeter(data2_packet);
 
     Serial.println("\n=== Energy Meter Data ===");
     Serial.printf("Time: %s\n", LocalHost::unixEpochTimeInMsToString(
       LocalHost::getUnixEpochTimeInMs()).c_str());
     Serial.printf("Serial: %u\n", emeter.getSerialNumber());
-    Serial.printf("Time: %u\n", emeter.getTime());
+    Serial.printf("Timestamp: %u\n", emeter.getTime());
 
-    // Get all OBIS data
-    std::vector<ObisData> obis_data = emeter.getObisData();
+    // Iterate through OBIS elements
+    const void* obis = emeter.getFirstObisElement();
 
-    // Display power values
-    Serial.println("\nPower (W):");
-    for (const auto& data : obis_data) {
-      if (data.measurementType.name.find("positive active power") != std::string::npos) {
-        Serial.printf("  %s: %.1f W\n",
-          data.measurementType.name.c_str(),
-          data.value);
-      }
-      if (data.measurementType.name.find("negative active power") != std::string::npos) {
-        Serial.printf("  %s: %.1f W\n",
-          data.measurementType.name.c_str(),
-          data.value);
-      }
-    }
+    Serial.println("\nOBIS Elements:");
+    while (obis != NULL) {
+      uint8_t channel = SpeedwireEmeterProtocol::getObisChannel(obis);
+      uint8_t index = SpeedwireEmeterProtocol::getObisIndex(obis);
+      uint8_t type = SpeedwireEmeterProtocol::getObisType(obis);
+      uint8_t tariff = SpeedwireEmeterProtocol::getObisTariff(obis);
 
-    // Display energy counters
-    Serial.println("\nEnergy (Wh):");
-    for (const auto& data : obis_data) {
-      if (data.measurementType.name.find("positive active energy") != std::string::npos) {
-        Serial.printf("  %s: %.1f Wh\n",
-          data.measurementType.name.c_str(),
-          data.value);
+      // Get value (4 or 8 bytes depending on type)
+      uint64_t value64 = 0;
+      if (type == 4) {
+        value64 = SpeedwireEmeterProtocol::getObisValue4(obis);
+      } else if (type == 8) {
+        value64 = SpeedwireEmeterProtocol::getObisValue8(obis);
       }
-      if (data.measurementType.name.find("negative active energy") != std::string::npos) {
-        Serial.printf("  %s: %.1f Wh\n",
-          data.measurementType.name.c_str(),
-          data.value);
+
+      // Print OBIS element
+      Serial.printf("  Ch:%d Idx:%d Type:%d Tariff:%d => %llu (0x%llX)\n",
+                    channel, index, type, tariff, value64, value64);
+
+      // Identify common measurements
+      // Channel 1 = Positive active power/energy
+      // Channel 2 = Negative active power/energy
+      // Index 4 = Power (W), Index 8 = Energy (Wh)
+      if (channel == 1 && index == 4 && type == 4) {
+        Serial.printf("    >> Positive Active Power Total: %.1f W\n", value64 / 10.0);
       }
+      else if (channel == 2 && index == 4 && type == 4) {
+        Serial.printf("    >> Negative Active Power Total: %.1f W\n", value64 / 10.0);
+      }
+      else if (channel == 1 && index == 8 && type == 8) {
+        Serial.printf("    >> Positive Active Energy Total: %.3f kWh\n", value64 / 3600000.0);
+      }
+      else if (channel == 2 && index == 8 && type == 8) {
+        Serial.printf("    >> Negative Active Energy Total: %.3f kWh\n", value64 / 3600000.0);
+      }
+
+      // Get next element
+      obis = emeter.getNextObisElement(obis);
     }
 
     Serial.println("========================\n");
   }
-
-  const unsigned long protocolID;
 };
 
 EmeterReceiver* emeterReceiver = nullptr;
@@ -130,13 +139,13 @@ void setup() {
   // Initialize LocalHost singleton
   localhost = &LocalHost::getInstance();
 
-  // Update LocalHost with current WiFi info
-  localhost->cacheHostname(std::string(WiFi.getHostname()));
-  localhost->cacheLocalIPAddresses(LocalHost::queryLocalIPAddresses());
-  localhost->cacheLocalInterfaceInfos(LocalHost::queryLocalInterfaceInfos());
+  // Update network info after WiFi connection
+  localhost->updateNetworkInfo();
 
   // Create socket factory and open multicast socket
-  factory = new SpeedwireSocketFactory(*localhost);
+  factory = SpeedwireSocketFactory::getInstance(*localhost,
+    SpeedwireSocketFactory::SocketStrategy::ONE_SOCKET_FOR_EACH_INTERFACE);
+
   const std::vector<std::string>& localIPs = localhost->getLocalIPv4Addresses();
 
   if (localIPs.empty()) {
@@ -145,7 +154,7 @@ void setup() {
   }
 
   Serial.printf("Opening socket on interface: %s\n", localIPs[0].c_str());
-  sockets = factory->getRecvSockets(localIPs, SpeedwireSocketFactory::MULTICAST);
+  sockets = factory->getRecvSockets(SpeedwireSocketFactory::SocketType::MULTICAST, localIPs);
 
   if (sockets.empty()) {
     Serial.println("ERROR: Failed to open socket!");
@@ -156,7 +165,7 @@ void setup() {
 
   // Create dispatcher and register emeter receiver
   dispatcher = new SpeedwireReceiveDispatcher(*localhost);
-  emeterReceiver = new EmeterReceiver();
+  emeterReceiver = new EmeterReceiver(*localhost);
   dispatcher->registerReceiver(*emeterReceiver);
 
   Serial.println("\nListening for energy meter packets...\n");
