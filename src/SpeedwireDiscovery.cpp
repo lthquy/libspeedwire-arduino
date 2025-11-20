@@ -3,7 +3,15 @@
 // https://www.sma.de/fileadmin/content/global/Partner/Documents/sma_developer/SpeedwireDD-TI-de-10.pdf
 //
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
-#ifdef _WIN32
+
+// ESP32/Arduino platform detection
+#if defined(ARDUINO) || defined(ESP32) || defined(ESP_PLATFORM)
+#define PLATFORM_ESP32
+#include <lwip/sockets.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <sys/poll.h>
+#elif defined(_WIN32)
 #include <Winsock2.h>
 #include <Ws2tcpip.h>
 #define poll(a, b, c)  WSAPoll((a), (b), (c))

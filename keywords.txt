@@ -1,0 +1,41 @@
+#######################################
+# Syntax Coloring Map For libspeedwire
+#######################################
+
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+
+SpeedwireSocket	KEYWORD1
+SpeedwireEmeterProtocol	KEYWORD1
+SpeedwireInverterProtocol	KEYWORD1
+SpeedwireHeader	KEYWORD1
+SpeedwireData	KEYWORD1
+SpeedwireDevice	KEYWORD1
+SpeedwireDiscovery	KEYWORD1
+LocalHost	KEYWORD1
+ObisData	KEYWORD1
+Logger	KEYWORD1
+AddressConversion	KEYWORD1
+SpeedwireByteEncoding	KEYWORD1
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+
+openSocket	KEYWORD2
+closeSocket	KEYWORD2
+recvfrom	KEYWORD2
+sendto	KEYWORD2
+parseEmeterPacket	KEYWORD2
+parseInverterPacket	KEYWORD2
+getLocalIPAddresses	KEYWORD2
+getHostname	KEYWORD2
+hexdump	KEYWORD2
+getInstance	KEYWORD2
+
+#######################################
+# Constants (LITERAL1)
+#######################################
+
+speedwire_port_9522	LITERAL1

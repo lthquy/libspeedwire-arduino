@@ -1,7 +1,13 @@
 #ifndef __LIBSPEEDWIRE_SPEEDWIRESOCKET_H__
 #define __LIBSPEEDWIRE_SPEEDWIRESOCKET_H__
 
-#ifdef _WIN32
+// ESP32/Arduino platform detection
+#if defined(ARDUINO) || defined(ESP32) || defined(ESP_PLATFORM)
+#define PLATFORM_ESP32
+#include <lwip/sockets.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#elif defined(_WIN32)
 #include <Winsock2.h>
 #include <Ws2tcpip.h>
 #else

@@ -1,5 +1,24 @@
-# speedwire-lib
-Code implementing a SMA Speedwire(TM) access library. It implements a full parser for the sma header and the emeter datagram structure, including obis filtering. In addition, it implements some parsing functionality for inverter query and response datagrams.
+# libspeedwire-arduino
+
+ESP32/Arduino port of the SMA Speedwire(TM) access library. This library implements a full parser for the SMA header and the emeter datagram structure, including OBIS filtering. In addition, it implements parsing functionality for inverter query and response datagrams.
+
+**Original library:** [RalfOGit/libspeedwire](https://github.com/RalfOGit/libspeedwire)
+
+## Platform Support
+
+This library has been ported to run on:
+- **ESP32** boards (primary target)
+- **Arduino** boards with network capability
+- Linux, Windows, macOS (original platform support maintained)
+
+## Features
+
+- Full SMA Speedwire protocol implementation
+- Energy meter (Emeter) data parsing
+- Inverter data query and response handling
+- OBIS code filtering
+- IPv4 and IPv6 support
+- Multicast and unicast communication
 
 The overall speedwire packet format is:
 - The packets start with a 4 byte SMA Signature containing the ascii encoded string "SMA\0".
@@ -67,6 +86,41 @@ The implementation comes with Doxygen comments. Thus you can use Doxygen to crea
 
 The software comes as is. No warrantees whatsoever are given and no responsibility is assumed in case of failure or damage being caused to your equipment.
 
+## Installation
+
+### For ESP32/Arduino (Arduino IDE)
+
+1. **Download this library:**
+   - Click "Code" → "Download ZIP" on GitHub
+   - Or clone: `git clone https://github.com/lthquy/libspeedwire-arduino.git`
+
+2. **Install in Arduino IDE:**
+   - Open Arduino IDE
+   - Go to Sketch → Include Library → Add .ZIP Library
+   - Select the downloaded ZIP file or the cloned folder
+
+3. **Open an example:**
+   - File → Examples → libspeedwire-arduino → BasicSpeedwireReceiver
+   - Update WiFi credentials in the sketch
+   - Select your ESP32 board from Tools → Board
+   - Upload to your ESP32
+
+### For ESP32/Arduino (PlatformIO)
+
+Add to your `platformio.ini`:
+
+```ini
+[env:esp32dev]
+platform = espressif32
+board = esp32dev
+framework = arduino
+
+lib_deps =
+    https://github.com/lthquy/libspeedwire-arduino.git
+```
+
+### For Linux/Windows/macOS Development
+
 The simplest way to build this library together with your code is to checkout this library into a separate folder and use unix symbolic links (ln -s ...) or ntfs junctions (mklink /J ...) to integrate it as a sub-folder within your projects folder.
 
 For example, if you are developing on a Windows host and your projects reside in C:\workspaces:
@@ -97,9 +151,68 @@ Further information regarding the SMA-Inverter(TM) datagrams can be found in var
     https://github.com/dgibson/python-smadata2/blob/master/doc/protocol.txt
     https://github.com/peterbarker/python-smadata2
 
-The code has been tested against the following environment:
+## Quick Start for ESP32
 
-    OS: CentOS 8(TM), IDE: VSCode (TM)
-    OS: Windows 10(TM), IDE: Visual Studio Community Edition 2019 (TM)
+Here's a minimal example to get started:
 
-You will need to open your local firewall for udp packets on port 9522.
+```cpp
+#include <WiFi.h>
+#include <LocalHost.hpp>
+#include <SpeedwireSocket.hpp>
+#include <SpeedwireHeader.hpp>
+#include <SpeedwireEmeterProtocol.hpp>
+
+using namespace libspeedwire;
+
+const char* ssid = "YOUR_WIFI_SSID";
+const char* password = "YOUR_WIFI_PASSWORD";
+
+void setup() {
+  Serial.begin(115200);
+
+  // Connect to WiFi
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+  }
+
+  // Initialize Speedwire
+  LocalHost& localhost = LocalHost::getInstance();
+  SpeedwireSocket socket(localhost);
+
+  String localIP = WiFi.localIP().toString();
+  socket.openSocket(localIP.c_str(), true);
+
+  Serial.println("Listening for SMA devices...");
+}
+
+void loop() {
+  // Receive and process Speedwire packets
+  // See examples for complete implementation
+}
+```
+
+## Hardware Requirements
+
+- ESP32 development board (ESP32-WROOM, ESP32-DevKitC, etc.)
+- SMA device (inverter or energy meter) on the same WiFi network
+- WiFi network with multicast support
+
+## Network Configuration
+
+- The library uses **UDP port 9522** for Speedwire communication
+- Make sure your router allows **multicast traffic** (addresses 239.12.255.254 and 239.12.255.255)
+- ESP32 and SMA devices must be on the **same subnet**
+
+## Tested Environments
+
+ESP32/Arduino:
+- ESP32-WROOM-32 with Arduino IDE 2.x
+- ESP32-DevKitC with PlatformIO
+- ESP-IDF v4.4+
+
+Desktop platforms:
+- OS: CentOS 8(TM), IDE: VSCode (TM)
+- OS: Windows 10(TM), IDE: Visual Studio Community Edition 2019 (TM)
+
+Note: You will need to open your local firewall for UDP packets on port 9522.

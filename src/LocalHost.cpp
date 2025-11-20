@@ -2,12 +2,31 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include <cstring>
 #include <stdio.h>
+
+// ESP32/Arduino platform detection
+#if defined(ARDUINO) || defined(ESP32) || defined(ESP_PLATFORM)
+#define PLATFORM_ESP32
+#include <Arduino.h>
+#ifdef ESP32
+#include <WiFi.h>
+#include <esp_wifi.h>
+#include <lwip/sockets.h>
+#include <lwip/netdb.h>
+#include <sys/time.h>
+#endif
+#else
 #include <chrono>
+#endif
 
 #ifdef _WIN32
 #include <Winsock2.h>
 #include <Ws2tcpip.h>
 #include <iphlpapi.h>
+#elif defined(PLATFORM_ESP32)
+// ESP32 includes already above
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #else
 #include <unistd.h>
 #include <sys/types.h>
@@ -217,12 +236,21 @@ uint32_t LocalHost::getInterfacePrefixLength(const std::string& local_ip_address
  *  Query the local hostname from the operating system.
  */
 const std::string LocalHost::queryHostname(void) {
+#ifdef PLATFORM_ESP32
+    // On ESP32, use WiFi hostname if available, otherwise return "esp32"
+    const char* hostname = WiFi.getHostname();
+    if (hostname != NULL && strlen(hostname) > 0) {
+        return std::string(hostname);
+    }
+    return std::string("esp32");
+#else
     char buffer[256];
     if (gethostname(buffer, sizeof(buffer)) != 0) {
         perror("gethostname() failure");
         return std::string();
     }
     return std::string(buffer);
+#endif
 }
 
 
@@ -231,6 +259,22 @@ const std::string LocalHost::queryHostname(void) {
  */
 std::vector<std::string> LocalHost::queryLocalIPAddresses(void) {
     std::vector<std::string> interfaces;
+#ifdef PLATFORM_ESP32
+    // On ESP32, get IP addresses from WiFi interface
+    if (WiFi.status() == WL_CONNECTED) {
+        // Add IPv4 address
+        IPAddress ip = WiFi.localIP();
+        char ip_str[16];
+        snprintf(ip_str, sizeof(ip_str), "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+        interfaces.push_back(std::string(ip_str));
+
+        // Add IPv6 link-local address if available
+        IPAddress ipv6 = WiFi.localIPv6();
+        if (ipv6.toString() != "(IP unset)") {
+            interfaces.push_back(ipv6.toString().c_str());
+        }
+    }
+#else
     char hostname[256];
     if (gethostname(hostname, sizeof(hostname)) != 0) {
         perror("gethostname");
@@ -250,6 +294,7 @@ std::vector<std::string> LocalHost::queryLocalIPAddresses(void) {
         info = info->ai_next;
     }
     freeaddrinfo(info);
+#endif
     return interfaces;
 }
 
@@ -259,7 +304,51 @@ std::vector<std::string> LocalHost::queryLocalIPAddresses(void) {
  */
 std::vector<LocalHost::InterfaceInfo> LocalHost::queryLocalInterfaceInfos(void) {
     std::vector<LocalHost::InterfaceInfo> addresses;
-#ifdef _WIN32
+#ifdef PLATFORM_ESP32
+    // On ESP32, get interface info from WiFi
+    if (WiFi.status() == WL_CONNECTED) {
+        LocalHost::InterfaceInfo info;
+        info.if_name = "wlan0";
+        info.if_index = 1;
+
+        // Get MAC address
+        uint8_t mac[6];
+        WiFi.macAddress(mac);
+        std::array<uint8_t, 6> mac_addr_bytes;
+        for (size_t i = 0; i < 6; ++i) {
+            mac_addr_bytes[i] = mac[i];
+        }
+        info.mac_address = AddressConversion::toString(mac_addr_bytes);
+
+        // Get IPv4 address
+        IPAddress ip = WiFi.localIP();
+        char ip_str[16];
+        snprintf(ip_str, sizeof(ip_str), "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+        std::string ip_name(ip_str);
+        info.ip_addresses.push_back(ip_name);
+
+        // Calculate prefix length from subnet mask
+        IPAddress subnet = WiFi.subnetMask();
+        uint32_t mask = (uint32_t)subnet[0] << 24 | (uint32_t)subnet[1] << 16 |
+                        (uint32_t)subnet[2] << 8 | (uint32_t)subnet[3];
+        uint32_t prefix = 0;
+        for (int i = 0; i < 32; ++i) {
+            if ((mask & (1u << (31 - i))) == 0) break;
+            ++prefix;
+        }
+        info.ip_address_prefix_lengths[ip_name] = prefix;
+
+        // Add IPv6 if available
+        IPAddress ipv6 = WiFi.localIPv6();
+        if (ipv6.toString() != "(IP unset)") {
+            std::string ipv6_str = ipv6.toString().c_str();
+            info.ip_addresses.push_back(ipv6_str);
+            info.ip_address_prefix_lengths[ipv6_str] = 64; // Standard IPv6 link-local prefix
+        }
+
+        addresses.push_back(info);
+    }
+#elif defined(_WIN32)
     PIP_ADAPTER_ADDRESSES AdapterAdresses;
     DWORD dwBufLen = sizeof(PIP_ADAPTER_ADDRESSES);
 
@@ -386,7 +475,9 @@ std::vector<LocalHost::InterfaceInfo> LocalHost::queryLocalInterfaceInfos(void) 
  *  Platform neutral sleep method.
  */
 void LocalHost::sleep(uint32_t millis) {
-#ifdef _WIN32
+#ifdef PLATFORM_ESP32
+    delay(millis);
+#elif defined(_WIN32)
     Sleep(millis);
 #else
     ::sleep(millis / 1000);
@@ -398,21 +489,19 @@ void LocalHost::sleep(uint32_t millis) {
  *  Platform neutral method to get a tick count provided in ms ticks; this is useful for timing purposes.
  */
 uint64_t LocalHost::getTickCountInMs(void) {  // return a tick counter with ms resolution
-#if 1
+#ifdef PLATFORM_ESP32
+    return (uint64_t)millis();
+#elif defined(_WIN32) || defined(__APPLE__) || !defined(__GNUC__)
     std::chrono::steady_clock::duration time = std::chrono::steady_clock::now().time_since_epoch();  // this is not relative to the unix epoch(!)
     std::chrono::milliseconds time_in_ms = std::chrono::duration_cast<std::chrono::milliseconds>(time);
     return time_in_ms.count();
 #else
-    // fallback code, in case std::chrono cannot be used
-#ifdef _WIN32
-    return GetTickCount64();
-#else
+    // fallback code for POSIX systems
     struct timespec spec;
     if (clock_gettime(CLOCK_MONOTONIC, &spec) == -1) {
         perror("clock_gettime(CLOCK_MONOTONIC,) failure");
     }
     return spec.tv_sec * 1000 + spec.tv_nsec / 1000000;
-#endif
 #endif
 }
 
@@ -421,12 +510,16 @@ uint64_t LocalHost::getTickCountInMs(void) {  // return a tick counter with ms r
  *  Platform neutral method to get the unix epoch time in ms.
  */
 uint64_t LocalHost::getUnixEpochTimeInMs(void) {
-#if 1
+#ifdef PLATFORM_ESP32
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (uint64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
+#elif defined(_WIN32) || defined(__APPLE__) || !defined(__GNUC__)
     std::chrono::system_clock::duration time = std::chrono::system_clock::now().time_since_epoch();
     std::chrono::milliseconds time_in_ms = std::chrono::duration_cast<std::chrono::milliseconds>(time);
     return time_in_ms.count();
 #else
-    // fallback code, in case std::chrono cannot be used
+    // fallback code for POSIX systems
     struct timespec spec;
     if (clock_gettime(CLOCK_REALTIME, &spec) == -1) {
         perror("clock_gettime(CLOCK_REALTIME,) failure");
@@ -518,6 +611,23 @@ const std::string LocalHost::getMatchingLocalIPAddress(std::string ip_address) c
  *  Print buffer content to stdout
  */
 void LocalHost::hexdump(const void* const buff, const unsigned long size) {
+#ifdef PLATFORM_ESP32
+    Serial.print("--------:");
+    for (unsigned long i = 0; i < size; i++) {
+        if ((i % 16) == 0) {
+            if (i != 0) {
+                Serial.print("     ");
+                for (unsigned long j = (i >= 16 ? i - 16 : 0); j < i; j++) {
+                    const unsigned char c = ((unsigned char*)buff)[j];
+                    Serial.write(isprint(c) ? c : 0x1a);
+                }
+            }
+            Serial.printf("\n%08X: ", i);
+        }
+        Serial.printf("%02X ", ((unsigned char*)buff)[i]);
+    }
+    Serial.println();
+#else
     printf("--------:");
     for (unsigned long i = 0; i < size; i++) {
         if ((i % 16) == 0) {
@@ -534,4 +644,5 @@ void LocalHost::hexdump(const void* const buff, const unsigned long size) {
     }
     printf("\n");
     fflush(stdout);
+#endif
 }

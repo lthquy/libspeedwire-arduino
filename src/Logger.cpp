@@ -2,6 +2,13 @@
 #include <cstdarg>
 #include <Logger.hpp>
 #include <LocalHost.hpp>
+
+// ESP32/Arduino platform detection
+#if defined(ARDUINO) || defined(ESP32) || defined(ESP_PLATFORM)
+#define PLATFORM_ESP32
+#include <Arduino.h>
+#endif
+
 using namespace libspeedwire;
 
 //#define PRINT_TIMESTAMP
@@ -108,7 +115,11 @@ void Logger::print(LogLevel level, const char* format, ... )
         }
     }
     else {
+#ifdef PLATFORM_ESP32
+        Serial.print(text.c_str());
+#else
         fputs(text.c_str(), stderr);
+#endif
     }
 }
 
@@ -168,7 +179,13 @@ void Logger::print(LogLevel level, const wchar_t* format, ... )
         }
     }
     else {
+#ifdef PLATFORM_ESP32
+        // Convert wstring to string for Serial output
+        std::string str_text(text.begin(), text.end());
+        Serial.print(str_text.c_str());
+#else
         fwprintf(stderr, text.c_str());
+#endif
     }
 
 }
